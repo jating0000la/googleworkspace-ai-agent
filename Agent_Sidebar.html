@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      color: #202124;
+      background: #f8f9fa;
+      font-size: 13px;
+    }
+    .app { padding: 14px; }
+    .brand {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .brand h1 { margin: 0 0 4px; font-size: 18px; }
+    .muted { color: #5f6368; font-size: 12px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .tab {
+      border: 1px solid #dadce0;
+      background: #fff;
+      border-radius: 8px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .tab.active { background: #202124; color: #fff; border-color: #202124; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    textarea, input {
+      width: 100%;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      padding: 9px;
+      font: inherit;
+      background: #fff;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    label { display: block; font-weight: 600; margin: 10px 0 5px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .primary { background: #1a73e8; color: #fff; }
+    .secondary { background: #e8eaed; color: #202124; }
+    .danger { background: #fce8e6; color: #b3261e; }
+    .row { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+    .result {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+      min-height: 80px;
+    }
+    .status {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #eef3fe;
+      color: #174ea6;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .ok { background: #e6f4ea; color: #137333; }
+    .error { background: #fce8e6; color: #b3261e; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .mini {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fff;
+    }
+    a { color: #1a73e8; }
+    code { font-size: 11px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="brand">
+    <h1>Workspace AI Agent</h1>
+    <div class="muted">OpenRouter + Google Drive + Docs + Sheets + Slides + Telegram</div>
+  </div>
+
+  <div id="status" class="status">Loading agent…</div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('chat', this)">Agent</button>
+    <button class="tab" onclick="showTab('settings', this)">Settings</button>
+  </div>
+
+  <div id="chat" class="panel active">
+    <div class="card">
+      <textarea id="prompt" placeholder="Example: Find my latest sales proposal and create a 10-slide presentation from it."></textarea>
+      <div class="row">
+        <button id="runBtn" class="primary" onclick="runAgent()">Run Agent</button>
+        <button class="secondary" onclick="resetSession()">Reset Memory</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted" style="margin-bottom:7px;">RESULT</div>
+      <div id="result" class="result">Ready.</div>
+    </div>
+  </div>
+
+  <div id="settings" class="panel">
+    <div class="card">
+      <label>OpenRouter API Key</label>
+      <input id="openRouterApiKey" type="password" placeholder="Leave blank to keep the stored key">
+
+      <label>Default Model</label>
+      <input id="defaultModel" type="text">
+
+      <label>Telegram Bot Token</label>
+      <input id="telegramBotToken" type="password" placeholder="Leave blank to keep the stored token">
+
+      <label>Allowed Telegram User IDs</label>
+      <input id="allowedUserIds" type="text" placeholder="123456789,987654321">
+      <div class="muted">Secure default: Telegram access is denied until at least one user ID is listed.</div>
+
+      <div class="row">
+        <button class="primary" onclick="saveSettings()">Save Settings</button>
+        <button class="secondary" onclick="testOpenRouter()">Test OpenRouter</button>
+        <button class="secondary" onclick="testTelegram()">Test Telegram</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted" style="margin-bottom:8px;">INSTALLATION</div>
+      <div class="grid">
+        <div class="mini"><strong>OpenRouter</strong><div id="orState" class="muted">—</div></div>
+        <div class="mini"><strong>Telegram</strong><div id="tgState" class="muted">—</div></div>
+      </div>
+
+      <div class="row">
+        <button class="secondary" onclick="installAgent()">Install / Repair</button>
+        <button class="secondary" onclick="installWebhook()">Install Telegram Webhook</button>
+      </div>
+
+      <div id="links" class="muted" style="margin-top:10px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let settings = {};
+
+  function setStatus(text, kind) {
+    const el = document.getElementById('status');
+    el.textContent = text;
+    el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function showTab(id, button) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    button.classList.add('active');
+  }
+
+  function gas(fn, ...args) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(err => reject(new Error(err && err.message ? err.message : String(err))));
+      runner[fn](...args);
+    });
+  }
+
+  async function loadSettings() {
+    try {
+      settings = await gas('getAgentSettingsForUi');
+      document.getElementById('defaultModel').value = settings.defaultModel || '';
+      document.getElementById('allowedUserIds').value = settings.allowedUserIds || '';
+      document.getElementById('orState').textContent =
+        settings.openRouterConfigured ? 'Configured ✓' : 'Not configured';
+      document.getElementById('tgState').textContent =
+        settings.telegramConfigured ? 'Configured ✓' : 'Not configured';
+
+      const parts = [];
+      if (settings.databaseUrl) {
+        parts.push('<a href="' + settings.databaseUrl + '" target="_blank">Agent database</a>');
+      }
+      if (settings.webAppUrl) {
+        parts.push('<a href="' + settings.webAppUrl + '" target="_blank">Web app</a>');
+      } else {
+        parts.push('Web app not deployed yet.');
+      }
+      document.getElementById('links').innerHTML = parts.join(' · ');
+      setStatus('Agent ready · v' + settings.version, 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function runAgent() {
+    const text = document.getElementById('prompt').value.trim();
+    if (!text) return;
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    setStatus('Agent is working…');
+    document.getElementById('result').textContent = 'Working…';
+
+    try {
+      const answer = await gas('runAgentFromSidebar', text);
+      document.getElementById('result').textContent = answer;
+      setStatus('Complete ✓', 'ok');
+    } catch (e) {
+      document.getElementById('result').textContent = e.message;
+      setStatus('Error', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function resetSession() {
+    try {
+      await gas('resetSidebarAgentSession');
+      document.getElementById('result').textContent = 'Conversation memory cleared.';
+      setStatus('Memory reset ✓', 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function saveSettings() {
+    setStatus('Saving settings…');
+    try {
+      settings = await gas('saveAgentSettings', {
+        openRouterApiKey: document.getElementById('openRouterApiKey').value.trim(),
+        telegramBotToken: document.getElementById('telegramBotToken').value.trim(),
+        allowedUserIds: document.getElementById('allowedUserIds').value.trim(),
+        defaultModel: document.getElementById('defaultModel').value.trim()
+      });
+      document.getElementById('openRouterApiKey').value = '';
+      document.getElementById('telegramBotToken').value = '';
+      await loadSettings();
+      setStatus('Settings saved ✓', 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function testOpenRouter() {
+    setStatus('Testing OpenRouter…');
+    try {
+      const r = await gas('testOpenRouterConnection');
+      setStatus('OpenRouter connected · ' + r.model, 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function testTelegram() {
+    setStatus('Testing Telegram…');
+    try {
+      const r = await gas('testTelegramConnection');
+      setStatus('Telegram connected · @' + (r.username || r.name || r.id), 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function installAgent() {
+    setStatus('Installing agent components…');
+    try {
+      const r = await gas('installAgent');
+      await loadSettings();
+      setStatus(r.message, 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  async function installWebhook() {
+    setStatus('Installing Telegram webhook…');
+    try {
+      const r = await gas('installTelegramWebhook');
+      setStatus('Telegram webhook installed ✓', 'ok');
+    } catch (e) {
+      setStatus(e.message, 'error');
+    }
+  }
+
+  document.getElementById('prompt').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runAgent();
+  });
+
+  loadSettings();
+</script>
+</body>
+</html>

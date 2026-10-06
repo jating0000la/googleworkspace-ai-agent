@@ -1,0 +1,44 @@
+Google Workspace AI Agent — Telegram Retry Fix v1.0.2
+
+WHY THIS FIX
+------------
+The same Telegram update was being delivered repeatedly. The Queue correctly
+deduplicated it, so the job ID stayed the same, but doPost() still sent the
+"Request received" acknowledgement on every Telegram retry.
+
+v1.0.2 adds:
+1. Atomic queue deduplication that reports isNew=true/false.
+2. Fast Script Cache deduplication for repeated Telegram update_id values.
+3. A stable hash fallback when update_id is missing.
+4. Only the FIRST delivery may send "Request received".
+5. Retried deliveries return HTTP OK immediately.
+6. installTelegramWebhookClean() to clear Telegram's old undelivered backlog.
+7. Slides/Docs/Sheets/OpenRouter logic is untouched.
+
+INSTALL
+-------
+Replace ONLY:
+- Config.gs
+- Queue.gs
+- Telegram.gs
+- Setup.gs
+
+Then:
+1. Save Apps Script.
+2. Deploy > Manage deployments > Edit > New version > Deploy.
+3. Run installAgent() once.
+4. Run installTelegramWebhookClean() ONCE.
+   This clears Telegram's pending webhook retry backlog. It does NOT delete
+   jobs already saved in your Agent Queue sheet.
+5. Reload the Google Sheet.
+6. Send /ping in Telegram.
+7. Send one normal task.
+
+EXPECTED
+--------
+For one Telegram instruction you should see only:
+  🤖 Request received...
+  ⚙️ Processing job...
+  <one final answer>
+
+The same job acknowledgement must no longer repeat.
