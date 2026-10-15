@@ -69,8 +69,14 @@ function chunkText_(text, chunkSize) {
       split = remaining.lastIndexOf(' ', size);
     }
     if (split < Math.floor(size * 0.40)) split = size;
+    // Do not split a UTF-16 surrogate pair (for example a Telegram emoji).
+    const before = remaining.charCodeAt(split - 1);
+    const after = remaining.charCodeAt(split);
+    if (before >= 0xD800 && before <= 0xDBFF && after >= 0xDC00 && after <= 0xDFFF) {
+      split = split === 1 ? 2 : split - 1;
+    }
     chunks.push(remaining.slice(0, split));
-    remaining = remaining.slice(split).replace(/^\s+/, '');
+    remaining = remaining.slice(split);
   }
   if (remaining) chunks.push(remaining);
   return chunks;
@@ -88,75 +94,3 @@ function to2dArray_(values) {
   if (!Array.isArray(values) || values.length === 0) {
     throw new Error('values must be a non-empty 2D array.');
   }
-  if (!Array.isArray(values[0])) {
-    values = [values];
-  }
-  const width = values[0].length;
-  if (!width) throw new Error('values must contain at least one column.');
-  values.forEach(function(row) {
-    if (!Array.isArray(row) || row.length !== width) {
-      throw new Error('All rows in values must have the same number of columns.');
-    }
-  });
-  return values;
-}
-
-function columnToNumber_(letters) {
-  const s = String(letters).toUpperCase();
-  let n = 0;
-  for (let i = 0; i < s.length; i++) {
-    const code = s.charCodeAt(i) - 64;
-    if (code < 1 || code > 26) throw new Error('Invalid column: ' + letters);
-    n = n * 26 + code;
-  }
-  return n;
-}
-
-function parseA1TopLeft_(a1) {
-  const m = String(a1 || 'A1').match(/^\s*([A-Za-z]+)(\d+)/);
-  if (!m) throw new Error('A1 notation must begin with a cell such as A1 or C5.');
-  return {
-    row: parseInt(m[2], 10),
-    column: columnToNumber_(m[1])
-  };
-}
-
-function getFileUrl_(fileId) {
-  return 'https://drive.google.com/open?id=' + encodeURIComponent(fileId);
-}
-
-function trimHistory_(history) {
-  const max = AI_AGENT_CONFIG.MAX_HISTORY_MESSAGES;
-  if (!Array.isArray(history)) return [];
-  return history.slice(Math.max(0, history.length - max));
-}
-
-function stripToolMessageForHistory_(message) {
-  if (!message) return null;
-  return {
-    role: message.role,
-    content: String(message.content || '')
-  };
-}
-
-function summarizeForAudit_(value, maxChars) {
-  return jsonStringifySafe_(value, maxChars || 4000);
-}
-
-function withScriptLock_(fn, waitMs) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(waitMs || 10000);
-  try {
-    return fn();
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function assertConfigured_() {
-  if (!getOpenRouterApiKey_()) {
-    throw new Error(
-      'OpenRouter API key is not configured. Open the Agent sidebar → Settings.'
-    );
-  }
-}
