@@ -1,5 +1,5 @@
 /**
- * Agent database: Sessions, Queue, AuditLog.
+ * Agent database: Sessions, Queue, Replies, AuditLog.
  * Uses one private Google Spreadsheet created by installAgent().
  */
 
@@ -63,6 +63,11 @@ function createOrRepairAgentDb_() {
   );
   ensureDbSheet_(
     ss,
+    AI_AGENT_CONFIG.DB_SHEETS.REPLIES,
+    AI_AGENT_CONFIG.REPLY_HEADERS
+  );
+  ensureDbSheet_(
+    ss,
     AI_AGENT_CONFIG.DB_SHEETS.AUDIT,
     AI_AGENT_CONFIG.AUDIT_HEADERS
   );
@@ -89,121 +94,3 @@ function findRowByValue_(sheet, column, value) {
 
 function loadSession_(sessionKey, defaults) {
   const ss = getAgentDb_();
-  const sheet = ss.getSheetByName(AI_AGENT_CONFIG.DB_SHEETS.SESSIONS);
-  const row = findRowByValue_(sheet, 1, sessionKey);
-
-  if (row < 0) {
-    const now = nowIso_();
-    const session = {
-      sessionKey: sessionKey,
-      channel: defaults.channel || 'unknown',
-      userId: String(defaults.userId || ''),
-      chatId: String(defaults.chatId || ''),
-      model: defaults.model || getDefaultAgentModel_(),
-      history: [],
-      context: {},
-      createdAt: now,
-      updatedAt: now
-    };
-    saveSession_(session);
-    return session;
-  }
-
-  const values = sheet.getRange(row, 1, 1, AI_AGENT_CONFIG.SESSION_HEADERS.length)
-    .getValues()[0];
-
-  return {
-    sessionKey: String(values[0]),
-    channel: String(values[1] || defaults.channel || ''),
-    userId: String(values[2] || defaults.userId || ''),
-    chatId: String(values[3] || defaults.chatId || ''),
-    model: String(values[4] || defaults.model || getDefaultAgentModel_()),
-    history: safeJsonParse_(String(values[5] || '[]'), []),
-    context: safeJsonParse_(String(values[6] || '{}'), {}),
-    createdAt: values[7] ? new Date(values[7]).toISOString() : nowIso_(),
-    updatedAt: values[8] ? new Date(values[8]).toISOString() : nowIso_()
-  };
-}
-
-function saveSession_(session) {
-  withScriptLock_(function() {
-    const ss = getAgentDb_();
-    const sheet = ss.getSheetByName(AI_AGENT_CONFIG.DB_SHEETS.SESSIONS);
-    let row = findRowByValue_(sheet, 1, session.sessionKey);
-    const now = new Date();
-
-    const values = [[
-      session.sessionKey,
-      session.channel || '',
-      String(session.userId || ''),
-      String(session.chatId || ''),
-      session.model || getDefaultAgentModel_(),
-      JSON.stringify(trimHistory_(session.history || [])),
-      JSON.stringify(session.context || {}),
-      session.createdAt ? new Date(session.createdAt) : now,
-      now
-    ]];
-
-    if (row < 0) {
-      sheet.appendRow(values[0]);
-    } else {
-      sheet.getRange(row, 1, 1, values[0].length).setValues(values);
-    }
-  });
-}
-
-function resetSession_(sessionKey, defaults) {
-  const session = loadSession_(sessionKey, defaults || {});
-  session.history = [];
-  session.context = {};
-  saveSession_(session);
-  return session;
-}
-
-function setSessionModel_(sessionKey, model, defaults) {
-  const session = loadSession_(sessionKey, defaults || {});
-  session.model = String(model || getDefaultAgentModel_()).trim();
-  saveSession_(session);
-  return session;
-}
-
-function appendAudit_(session, toolName, args, result, success) {
-  try {
-    const ss = getAgentDb_();
-    const sheet = ss.getSheetByName(AI_AGENT_CONFIG.DB_SHEETS.AUDIT);
-    sheet.appendRow([
-      new Date(),
-      session.sessionKey || '',
-      String(session.userId || ''),
-      toolName,
-      summarizeForAudit_(args, 6000),
-      summarizeForAudit_(result, 6000),
-      success !== false
-    ]);
-  } catch (e) {
-    console.error('Audit log failed: ' + normalizeError_(e));
-  }
-}
-
-function rememberToolResult_(session, toolName, result) {
-  if (!result || typeof result !== 'object') return;
-  const ctx = session.context || {};
-
-  const mappings = [
-    ['fileId', 'currentFileId'],
-    ['documentId', 'currentDocumentId'],
-    ['spreadsheetId', 'currentSpreadsheetId'],
-    ['presentationId', 'currentPresentationId'],
-    ['folderId', 'currentFolderId']
-  ];
-
-  mappings.forEach(function(pair) {
-    if (result[pair[0]]) ctx[pair[1]] = String(result[pair[0]]);
-  });
-
-  if (result.name) ctx.currentFileName = String(result.name);
-  if (result.title) ctx.currentTitle = String(result.title);
-  ctx.lastTool = toolName;
-  ctx.lastUpdated = nowIso_();
-  session.context = ctx;
-}
