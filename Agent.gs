@@ -34,6 +34,15 @@ function runAgent_(userText, runtime) {
   assertConfigured_();
 
   const started = Date.now();
+  // Queue workers pass their own absolute deadline so each job shares the
+  // worker's remaining time instead of receiving another full agent budget.
+  const deadlineMs = Math.min(
+    started + AI_AGENT_CONFIG.AGENT_SOFT_TIME_LIMIT_MS,
+    Number.isFinite(runtime.deadlineMs) ? runtime.deadlineMs : Infinity
+  );
+  const timeLimitMessage =
+    'This run reached its time limit. I saved the available file context; ' +
+    'ask me to continue if more work is needed.';
   const session = loadSession_(runtime.sessionKey, {
     channel: runtime.channel,
     userId: runtime.userId,
@@ -59,10 +68,8 @@ function runAgent_(userText, runtime) {
   let finalModel = session.model;
 
   for (let step = 0; step < AI_AGENT_CONFIG.MAX_TOOL_STEPS; step++) {
-    if (Date.now() - started > AI_AGENT_CONFIG.AGENT_SOFT_TIME_LIMIT_MS) {
-      finalText =
-        'I completed the work that fit within this run. ' +
-        'Send "continue" and I will continue from the saved file context.';
+    if (Date.now() >= deadlineMs) {
+      finalText = timeLimitMessage;
       break;
     }
 
@@ -78,115 +85,12 @@ function runAgent_(userText, runtime) {
       // If a specifically selected model is temporarily unavailable, use the
       // free feature-aware router once as a fallback.
       if (session.model !== AI_AGENT_CONFIG.FALLBACK_MODEL) {
+        if (Date.now() >= deadlineMs) {
+          finalText = timeLimitMessage;
+          break;
+        }
         response = openRouterChat_(messages, tools, {
           model: AI_AGENT_CONFIG.FALLBACK_MODEL,
           temperature: 0.1,
           maxTokens: 5000,
           toolChoice: 'auto'
-        });
-      } else {
-        throw e;
-      }
-    }
-
-    finalModel = response.model || session.model;
-    const assistant = normalizeAssistantToolMessage_(response.message);
-    const toolCalls = Array.isArray(assistant.tool_calls)
-      ? assistant.tool_calls
-      : [];
-
-    if (!toolCalls.length) {
-      finalText = String(assistant.content || '').trim();
-      if (!finalText) finalText = 'Done.';
-      break;
-    }
-
-    messages.push(assistant);
-
-    for (let i = 0; i < toolCalls.length; i++) {
-      const call = toolCalls[i];
-      const toolName = String(call.function.name || '');
-      const parsedArgs = safeJsonParse_(call.function.arguments, null);
-      let result;
-
-      if (!parsedArgs) {
-        result = {
-          success: false,
-          error: 'Tool arguments were not valid JSON.'
-        };
-      } else {
-        try {
-          result = executeAgentTool_(toolName, parsedArgs, session);
-        } catch (toolError) {
-          result = {
-            success: false,
-            error: normalizeError_(toolError)
-          };
-        }
-      }
-
-      messages.push({
-        role: 'tool',
-        tool_call_id: call.id,
-        content: jsonStringifySafe_(
-          result,
-          AI_AGENT_CONFIG.MAX_TOOL_RESULT_CHARS
-        )
-      });
-    }
-  }
-
-  if (!finalText) {
-    const finalResponse = openRouterChat_(messages, tools, {
-      model: finalModel || session.model,
-      temperature: 0.1,
-      maxTokens: 2000,
-      toolChoice: 'none'
-    });
-    finalText = String(finalResponse.message.content || '').trim() ||
-      'The requested operations finished.';
-  }
-
-  session.history = trimHistory_(
-    priorHistory.concat([
-      userMessage,
-      { role: 'assistant', content: finalText }
-    ])
-  );
-  saveSession_(session);
-
-  return finalText;
-}
-
-/**
- * Synchronous entry point for the Google Sheets sidebar.
- */
-function runAgentFromSidebar(userText) {
-  const userKey = Session.getTemporaryActiveUserKey() || 'owner';
-  const sessionKey = 'sidebar:' + userKey;
-  const defaults = {
-    channel: 'sidebar',
-    userId: userKey,
-    chatId: ''
-  };
-
-  const command = handleAgentCommand_(userText, sessionKey, defaults);
-  if (command.handled) return command.text;
-
-  return runAgent_(userText, {
-    sessionKey: sessionKey,
-    channel: 'sidebar',
-    userId: userKey,
-    chatId: ''
-  });
-}
-
-function resetSidebarAgentSession() {
-  const userKey = Session.getTemporaryActiveUserKey() || 'owner';
-  resetSession_('sidebar:' + userKey, {
-    channel: 'sidebar',
-    userId: userKey,
-    chatId: ''
-  });
-  return { success: true };
-}
