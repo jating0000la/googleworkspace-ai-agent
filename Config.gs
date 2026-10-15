@@ -3,7 +3,7 @@
  * Runtime: Google Apps Script V8
  */
 const AI_AGENT_CONFIG = Object.freeze({
-  VERSION: '1.0.2',
+  VERSION: '1.0.3',
   OPENROUTER_URL: 'https://openrouter.ai/api/v1/chat/completions',
   DEFAULT_MODEL: 'nvidia/nemotron-3-ultra-550b-a55b:free',
   FALLBACK_MODEL: 'openrouter/free',
@@ -14,14 +14,15 @@ const AI_AGENT_CONFIG = Object.freeze({
   MAX_SHEET_READ_CELLS: 5000,
   MAX_DRIVE_SEARCH_RESULTS: 20,
   MAX_QUEUE_JOBS_PER_RUN: 2,
-  MAX_JOB_ATTEMPTS: 2,
-  QUEUE_STUCK_MINUTES: 5,
+  QUEUE_WORKER_LEASE_MS: 480000,
+  QUEUE_START_MARGIN_MS: 15000,
   AGENT_SOFT_TIME_LIMIT_MS: 240000,
   TELEGRAM_MESSAGE_CHUNK: 3900,
   TELEGRAM_ALLOWED_UPDATES: ['message'],
   DB_SHEETS: Object.freeze({
     SESSIONS: 'Sessions',
     QUEUE: 'Queue',
+    REPLIES: 'Replies',
     AUDIT: 'AuditLog'
   }),
   SESSION_HEADERS: Object.freeze([
@@ -31,6 +32,9 @@ const AI_AGENT_CONFIG = Object.freeze({
   QUEUE_HEADERS: Object.freeze([
     'JobId','ExternalId','Status','CreatedAt','UpdatedAt','Channel',
     'UserId','ChatId','Text','Attempts','LastError','ResultSummary'
+  ]),
+  REPLY_HEADERS: Object.freeze([
+    'JobId','ChunkIndex','ChunkCount','Text','SentAt','Outcome','RetryAt'
   ]),
   AUDIT_HEADERS: Object.freeze([
     'Timestamp','SessionKey','UserId','Tool','ArgumentsJson','ResultJson','Success'
@@ -43,7 +47,8 @@ const AI_AGENT_PROPERTIES = Object.freeze({
   TELEGRAM_ALLOWED_USER_IDS: 'AI_TELEGRAM_ALLOWED_USER_IDS',
   DEFAULT_MODEL: 'AI_DEFAULT_MODEL',
   TELEGRAM_WEBHOOK_KEY: 'AI_TELEGRAM_WEBHOOK_KEY',
-  DB_ID: 'AI_AGENT_DB_ID'
+  DB_ID: 'AI_AGENT_DB_ID',
+  QUEUE_WORKER_LEASE: 'AI_AGENT_QUEUE_WORKER_LEASE'
 });
 
 function agentProps_() {
